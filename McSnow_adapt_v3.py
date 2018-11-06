@@ -40,6 +40,7 @@ pam.nmlSet["save_psd"] = False    # save particle size distribution
 pam.nmlSet["radar_attenuation"] = "disabled" #"bottom-up"
 pam.nmlSet["hydro_fullspec"] = True #use full-spectra as input
 pam.nmlSet["radar_allow_negative_dD_dU"] = True #allow negative dU dD which can happen at the threshold between different particle species
+pam.nmlSet["radar_pnoise0"]=-100 #set radar noise to an arbitrary low number
 #pam.nmlSet["conserve_mass_rescale_dsd"] = False
 #pam.nmlSet["radar_nfft"] = 8192 #1024
 #pam.nmlSet["radar_max_V"] = 3.
@@ -75,7 +76,10 @@ atmo = __postprocess_McSnow.read_atmo(experiment,filestring_atmo)
 
 #create height vector
 #get Sp with maximum height for upper limit
-model_top = np.nanmax(SP['height'])
+if not 'height' in SP.keys():#exit scriptif there are not any SP (probably only 1D-SB run)
+    sys.exit(0)
+else:
+    model_top = np.nanmax(SP['height'])
 #model_top = 5000. #top of model / m #TODO: flexible input for model_top
 heightvec_bound = np.linspace(0,model_top,n_heights) #start with 0+z_res and go n_heigts step up to model_top
 heightvec_center = heightvec_bound[:-1] + 0.5 * np.diff(heightvec_bound) #center of the height-bins
@@ -112,16 +116,24 @@ pamData["timestamp"] =  0 #unixtime
 pamData["hgt"] = atmo_interpolated["z"] #np.arange(0.,12000.,(12000.-0.)/(vec_shape[1])) #height in m 
 pamData["temp"] = atmo_interpolated["T"] #T in K 
 
+#ATTENTION: set fix values to the atmosphere to test effect of air density
+#pamData["press"] = np.ones_like(atmo_interpolated["p"])*100000
+#pamData["relhum"] = np.ones_like(atmo_interpolated["p"])*100
+#pamData["temp"] = np.ones_like(atmo_interpolated["p"])*273
+
 #determine number of SP to get number of necessary categories
 number_ofSP = SP['m_tot'].shape[0]
 
 #get necessary parameter of m-D and A-D relationship
-mth,unr_alf,unr_bet,rhoi,rhol,Dth = __postprocess_McSnow.return_parameter_mD_AD_rel()
+mth,unr_alf,unr_bet,rhoi,rhol,Dth,unr_sig,unr_gam,sph_sig,sph_gam = __postprocess_McSnow.return_parameter_mD_AD_rel(experiment)[0:10]
 #selecting fallspeed model from testcase string
 if "HW" in testcase:
     fallsp_model='heymsfield10_particles'
+elif "KC" in testcase:
+    fallsp_model='khvorostyanov05_particles'
 else:
-    fallsp_model='khvorostyanov01_particles'
+    print "error: fall speed model neither HW nor KC (exit from McSnow_adapt_v3.py)"
+    sys.exit(1)
 
 ###
 #handling the categories (TODO: until now just one)
@@ -154,8 +166,11 @@ for idx_height,height_now in enumerate(heightvec_center):
     #determine number of SP
     number_ofSP_in_heightbin = SP["m_tot_heightbin_" + str(idx_height)].shape[0] #; print "number_ofSP",number_ofSP
     # sigma for kernel estimate, sigma = sigma0/N_s**(1/5), see Shima Sec 5.1.4
-    sigmai = (sigma0 / number_ofSP_in_heightbin**0.2) #ATTENTION:  this is defined **-1 in McSnow's mo_output.f90 
-    
+    try:
+        sigmai = (sigma0 / number_ofSP_in_heightbin**0.2) #ATTENTION:  this is defined **-1 in McSnow's mo_output.f90 
+    except:
+        print "no SP at",height_now,"m, continuing with next height"
+        continue
     #transform to logspace and set target array
     x = SP["diam_heightbin_" + str(idx_height)] #np.log(SP["diam_heightbin_" + str(idx_height)]) #logarithmate (base e)
     x_grid = pam.df.dataFullSpec["d_ds"][0,0,idx_height,0,:] #this must be equidistant (in log space) to calculate x_grid_logdiff!!
@@ -179,40 +194,30 @@ for idx_height,height_now in enumerate(heightvec_center):
     
     #pass values for small ice
     #'''
-    if not all(n_ds[:i_th])==0 or deact[0]=='1':#see switch deact at beginning #pass values for small spherical ice
+    if (not all(n_ds[:i_th-1]==0)) and deact[0]=='1':#see switch deact at beginning #pass values for small spherical ice #all(n_ds[:i_th-1]==0) skips single values
         i_cat = 0
         #print "i_th",i_th,n_ds[:i_th-1],n_ds[i_th:]
         #print height_now,"n_ds",n_ds[:i_th]
+        #from IPython.core.debugger import Tracer ; Tracer()()
         pam.df.dataFullSpec["n_ds"][0,0,idx_height,i_cat,:i_th] = n_ds[:i_th] #number density [#/m3] for small spherical ice
         pam.df.dataFullSpec["mass_ds"][0,0,idx_height,i_cat,:i_th] = np.pi/6.*rhoi*pam.df.dataFullSpec["d_ds"][0,0,idx_height,0,:i_th]**3 #number density [#/m3] for small spherical ice
         pam.df.dataFullSpec["rho_ds"][0,0,idx_height,i_cat,:i_th] = rhoi #*pam.df.dataFullSpec["d_ds"][0,0,idx_height,0,i_th:]**3 #mass at the middle of the bin for small spherical ice
         pam.df.dataFullSpec["area_ds"][0,0,idx_height,i_cat,:i_th] = np.pi/4.*pam.df.dataFullSpec["d_ds"][0,0,idx_height,i_cat,:i_th]**2. #area at the middle of the bin for small spherical ice
         pam.df.dataFullSpec["as_ratio"][0,0,idx_height,i_cat,:i_th] = 1.0
         #'''
-    if not all(n_ds[i_th:])==0 or deact[1]=='1':#see switch deact at beginning :
+    if (not all(n_ds[i_th:]==0)) and deact[1]=='1':#see switch deact at beginning :
         #pass values for aggregates
         i_cat = 1
-        #from IPython.core.debugger import Tracer ; Tracer()()
         pam.df.dataFullSpec["n_ds"][0,0,idx_height,i_cat,i_th:] = n_ds[i_th:] #number density [#/m3] for small spherical ice
         #pam.df.dataFullSpec["n_ds"][0,0,idx_height,i_cat,:] = n_ds[:] #number density [#/m3] for small spherical ice
         #mass at middle of bin
-        b_agg=2.1;a_agg = 2.8*10**(2*b_agg-6)
-        pam.df.dataFullSpec["mass_ds"][0,0,idx_height,i_cat,:] = a_agg*pam.df.dataFullSpec["d_ds"][0,0,idx_height,i_cat,:]**b_agg #mass at the middle of the bin for aggregates
+        #b_agg=2.1;a_agg = 2.8*10**(2*b_agg-6)
+        pam.df.dataFullSpec["mass_ds"][0,0,idx_height,i_cat,:] = unr_alf*pam.df.dataFullSpec["d_ds"][0,0,idx_height,i_cat,:]**unr_bet #mass at the middle of the bin for aggregates
         #area of middle of bin
         d_agg=1.88;c_agg = 2.285*10**(2*d_agg-5)
-        pam.df.dataFullSpec["area_ds"][0,0,idx_height,i_cat,:] = c_agg*pam.df.dataFullSpec["d_ds"][0,0,idx_height,i_cat,:]**d_agg #area at the middle of the bin for aggregates
+        pam.df.dataFullSpec["area_ds"][0,0,idx_height,i_cat,:] = unr_sig*pam.df.dataFullSpec["d_ds"][0,0,idx_height,i_cat,:]**unr_gam #area at the middle of the bin for aggregates
         pam.df.dataFullSpec["as_ratio"][0,0,idx_height,i_cat,:] = 0.6
 
-'''
-import matplotlib.pyplot as plt
-fig, axes = plt.subplots(nrows=4, ncols=1,)
-axes[0].plot(pam.df.dataFullSpec["n_ds"][0,0,0,0,:])
-axes[1].semilogy(pam.df.dataFullSpec["mass_ds"][0,0,0,0,:])
-axes[2].semilogy(pam.df.dataFullSpec["area_ds"][0,0,0,0,:])
-axes[3].plot(pam.df.dataFullSpec["as_ratio"][0,0,0,0,:])
-plt.show()
-'''
-#from IPython.core.debugger import Tracer ; Tracer()()
 
 #run PAMTRA
 pam.runParallelPamtra([9.6,35.5,95], pp_deltaX=1, pp_deltaY=1, pp_deltaF=1, pp_local_workers='auto') #pam.runPamtra([9.6,35.5,95])

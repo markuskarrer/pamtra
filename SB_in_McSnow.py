@@ -43,7 +43,9 @@ pam.nmlSet["radar_mode"] = "spectrum"
 pam.nmlSet["save_psd"] = False    # save particle size distribution
 pam.nmlSet["radar_attenuation"] = "disabled" #"bottom-up"
 #pam.nmlSet["hydro_adaptive_grid"] = True    # uncomment this line before changing max and min sp_diameter of size distribution
-pam.nmlSet["conserve_mass_rescale_dsd"] = True    #necessary because of separating into m-D-relationship regions
+pam.nmlSet["conserve_mass_rescale_dsd"] = True    #rescale with the real mass after making the distribution
+pam.nmlSet["radar_pnoise0"]=-100 #set radar noise to an arbitrary low number
+
 #pam.nmlSet["hydro_fullspec"] = True #use full-spectra as input
 #pam.nmlSet["radar_allow_negative_dD_dU"] = True #allow negative dU dD which can happen at the threshold between different particle species
 #pam.nmlSet["radar_nfft"] = 4 #4096
@@ -83,8 +85,8 @@ twomom = dict()
 
 #if necessary change name of variables
 varlist = twomom_file.variables
-#read PAMTRA variables to pamData dictionary
-i_timestep=(tstep/30)-1 #there is no output for t=0min after that there are output steps in 30 minute steps (this could vary)
+#read twomom variables to twomom dictionary
+i_timestep=(tstep/60)-1 #there is no output for t=0min after that there are output steps in 30 minute steps (this could vary)
 for var in varlist:#read files and write it with different names in Data
     if var in ("times","heights"):
         twomom[var] = np.squeeze(twomom_file.variables[var])
@@ -129,7 +131,13 @@ pamData["timestamp"] =  0 #unixtime #TODO: not randomly set here
 pamData["hgt"] = atmo_interpolated["z"] #np.arange(0.,12000.,(12000.-0.)/(vec_shape[1])) #height in m 
 pamData["temp"] = atmo_interpolated["T"] #T in K 
 
+#ATTENTION: set fix values to the atmosphere to test effect of air density
+#pamData["press"] = np.ones_like(atmo_interpolated["p"])*100000
+#pamData["relhum"] = np.ones_like(atmo_interpolated["p"])*100
+#pamData["temp"] = np.ones_like(atmo_interpolated["p"])*273
 
+#pamData["hgt"] = (1+pamData["hgt"]/1000)*100
+#from IPython.core.debugger import Tracer ; Tracer()()
 #write hydrometeors into one variable named hydro_cmpl for mass mixing ratios and hydro_num_cmpl for number
 hydro_cmpl 	= 	np.zeros([1,1,n_heights,6])#allocate
 hydro_num_cmpl 	= 	np.zeros([1,1,n_heights,6])#allocate
@@ -150,6 +158,8 @@ for i_hydro,hydromet in enumerate(["qnc","qni","qnr","qns","qng","qnh"]):
 
 pamData["hydro_q"] = hydro_cmpl[:,:]
 pamData["hydro_n"] = hydro_num_cmpl[:,:]
+
+#from IPython.core.debugger import Tracer ; Tracer()()
 # Add them to pamtra object and create profile
 pam.createProfile(**pamData)
 
