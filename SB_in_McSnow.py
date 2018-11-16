@@ -42,7 +42,7 @@ pam.nmlSet["active"] = True    # Activate this for Cloud radar
 pam.nmlSet["radar_mode"] = "spectrum"
 pam.nmlSet["save_psd"] = False    # save particle size distribution
 pam.nmlSet["radar_attenuation"] = "disabled" #"bottom-up"
-#pam.nmlSet["hydro_adaptive_grid"] = True    # uncomment this line before changing max and min sp_diameter of size distribution
+pam.nmlSet["hydro_adaptive_grid"] = True    # uncomment this line before changing max and min sp_diameter of size distribution
 pam.nmlSet["conserve_mass_rescale_dsd"] = True    #rescale with the real mass after making the distribution
 pam.nmlSet["radar_pnoise0"]=-100 #set radar noise to an arbitrary low number
 

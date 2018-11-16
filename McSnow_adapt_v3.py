@@ -15,7 +15,7 @@ from netCDF4 import Dataset
 #self written #these files are linked here from the pythoncode/functions directory
 import __postprocess_McSnow
 import __general_utilities
-
+import __postprocess_SB
 #read variables passed by shell script
 tstep = int(os.environ["tstep"])
 experiment = os.environ["experiment"] #experiment name (this also contains a lot of information about the run)
@@ -131,6 +131,18 @@ if "HW" in testcase:
     fallsp_model='heymsfield10_particles'
 elif "KC" in testcase:
     fallsp_model='khvorostyanov05_particles'
+elif "SBparams" in testcase:
+    #get parameters from the SB-categories
+    
+    #with the next lines you can check the power law coefficients
+    #cloud_water,rain,cloud_ice,snow,graupel,hail = __postprocess_SB.init_particles()
+    #cloud_water,rain,cloud_ice,snow,graupel,hail = __postprocess_SB.convert_Nm_to_ND(cloud_water,rain,cloud_ice,snow,graupel,hail)
+    #a_vel_icecosmo5 = 2.77e1; b_vel_icecosmo5 = 0.215790
+    #v_SB_ice = a_vel_icecosmo5*(cloud_ice.a_ms*D_array**cloud_ice.b_ms)**(b_vel_icecosmo5)
+    #a_velD = a_vel_icecosmo5*(cloud_ice.a_ms)**(b_vel_icecosmo5); b_velD = cloud_ice.b_ms*b_vel_icecosmo5 #derive constant as a function of D (v=a_velD*diam**v_velD) instead of m
+    
+    fallsp_model='corPowerLaw_30.606_0.5533' #{0:.3f}_{0:.2f}'.format(a_velD,b_velD) #30.606_0.5533'
+    #print fallsp_model,a_velD,b_velD; sys.exit(1)
 else:
     print "error: fall speed model neither HW nor KC (exit from McSnow_adapt_v3.py)"
     sys.exit(1)
@@ -156,7 +168,7 @@ pam.df.addFullSpectra()
 
 #initialize diameter arrays; dimensions are: (x,y,z,hydrometeor,bin)
 for i_cat in range(0,N_cat):
-    pam.df.dataFullSpec["d_bound_ds"][0,0,:,i_cat,:],dum =  np.meshgrid(10**np.linspace(-9,0,nbins+1),np.arange(0,n_heights-1))#2D-grid dimension:(height,bins); matrix with sp_diameters which is repeted N_height times
+    pam.df.dataFullSpec["d_bound_ds"][0,0,:,i_cat,:],dum =  np.meshgrid(10**np.linspace(-9,-1,nbins+1),np.arange(0,n_heights-1))#2D-grid dimension:(height,bins); matrix with sp_diameters which is repeted N_height times
     pam.df.dataFullSpec["d_ds"][0,0,:,i_cat,:] = pam.df.dataFullSpec["d_bound_ds"][0,0,:,i_cat,:-1] + 0.5 * np.diff(pam.df.dataFullSpec["d_bound_ds"][0,0,:,i_cat,:])#center of the bins defined by d_bound_ds
 
 #loop over all heights to perform KDE at each height
