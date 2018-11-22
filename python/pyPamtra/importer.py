@@ -1837,7 +1837,7 @@ def readIcon2momMeteogram(fname, descriptorFile, debug=False, verbosity=0, timei
 
   hgt_key = 'height_2'
   if vals.has_key(hgt_key):
-    continue
+    a=0 #continue
   elif vals.has_key('heights_2'):
     hgt_key = heights_2
   else:
